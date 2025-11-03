@@ -9,30 +9,84 @@ def fetch_daily_metrics(target_date: date) -> pd.DataFrame:
     Real implementation stub is provided at bottom.
     """
     if os.getenv("MOCK_GADS", "1") != "0":
-        rng = np.random.default_rng(42 + int(target_date.strftime("%Y%m%d")))
-        customers = ["1111111111"]
-        campaigns = [f"c_{i}" for i in range(3)]
-        ad_groups = [f"ag_{i}" for i in range(6)]
+        # Use same entities as add_sample_metrics.py for consistency
+        entities = [
+            {"customer_id": "1234567890", "campaign_id": "campaign_12345", "ad_group_id": "adgroup_11111"},
+            {"customer_id": "1234567890", "campaign_id": "campaign_12345", "ad_group_id": "adgroup_22222"},
+            {"customer_id": "1234567890", "campaign_id": "campaign_67890", "ad_group_id": "adgroup_33333"},
+            {"customer_id": "1234567890", "campaign_id": "campaign_67890", "ad_group_id": "adgroup_44444"},
+        ]
+
+        # Check if this is "today" to inject anomalies
+        is_today = target_date == date.today()
+
         rows = []
-        for cust in customers:
-            for c in campaigns:
-                for ag in ad_groups:
-                    imps = rng.integers(200, 5000)
-                    clicks = int(imps * rng.uniform(0.02, 0.12))
-                    cost = round(clicks * rng.uniform(0.5, 3.5), 2)
-                    conv = round(clicks * rng.uniform(0.01, 0.15), 2)
-                    conv_val = round(conv * rng.uniform(50, 300), 2)
+        for i, entity in enumerate(entities):
+            if is_today:
+                # Inject specific anomalies for demonstration
+                if i == 0:
+                    # Normal data
                     rows.append({
+                        **entity,
                         "date": target_date,
-                        "customer_id": cust,
-                        "campaign_id": c,
-                        "ad_group_id": ag,
-                        "impressions": int(imps),
-                        "clicks": int(clicks),
-                        "cost": float(cost),
-                        "conversions": float(conv),
-                        "conv_value": float(conv_val),
+                        "impressions": 1000,
+                        "clicks": 40,
+                        "cost": 80.0,
+                        "conversions": 1.8,
+                        "conv_value": 90.0,
                     })
+                elif i == 1:
+                    # COST SPIKE anomaly
+                    rows.append({
+                        **entity,
+                        "date": target_date,
+                        "impressions": 1000,
+                        "clicks": 40,
+                        "cost": 500.0,  # Very high cost!
+                        "conversions": 1.5,
+                        "conv_value": 75.0,
+                    })
+                elif i == 2:
+                    # CTR DROP anomaly (very few clicks)
+                    rows.append({
+                        **entity,
+                        "date": target_date,
+                        "impressions": 1000,
+                        "clicks": 10,  # Very low clicks = low CTR
+                        "cost": 25.0,
+                        "conversions": 0.4,
+                        "conv_value": 20.0,
+                    })
+                elif i == 3:
+                    # CONVERSIONS DROP anomaly
+                    rows.append({
+                        **entity,
+                        "date": target_date,
+                        "impressions": 1000,
+                        "clicks": 40,
+                        "cost": 80.0,
+                        "conversions": 0.2,  # Very low conversions!
+                        "conv_value": 10.0,
+                    })
+            else:
+                # Normal historical data with random variation
+                rng = np.random.default_rng(42 + int(target_date.strftime("%Y%m%d")) + i)
+                base_impressions = rng.integers(800, 1200)
+                base_clicks = int(base_impressions * rng.uniform(0.03, 0.05))  # 3-5% CTR
+                base_cost = base_clicks * rng.uniform(1.5, 2.5)  # $1.5-2.5 per click
+                base_conversions = base_clicks * rng.uniform(0.03, 0.05)  # 3-5% conversion rate
+                base_conv_value = base_conversions * rng.uniform(40, 60)  # $40-60 per conversion
+
+                rows.append({
+                    **entity,
+                    "date": target_date,
+                    "impressions": int(base_impressions),
+                    "clicks": int(base_clicks),
+                    "cost": round(base_cost, 2),
+                    "conversions": round(base_conversions, 2),
+                    "conv_value": round(base_conv_value, 2),
+                })
+
         return pd.DataFrame(rows)
 
     # ---- Real implementation sketch (requires credentials configured) ----
