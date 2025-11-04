@@ -7,7 +7,9 @@
       "Bash(findstr:*)",
       "Bash(netstat:*)",
       "Bash(curl:*)",
-      "Bash(.venv313/Scripts/python.exe -m uvicorn:*)"
+      "Bash(.venv313/Scripts/python.exe -m uvicorn:*)",
+      "Bash(.venv313/Scripts/python.exe -m pip install:*)",
+      "Bash(.venv313/Scripts/python.exe:*)"
     ],
     "deny": [],
     "ask": []

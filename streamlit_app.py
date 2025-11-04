@@ -88,36 +88,113 @@ with tab1:
         uploaded_file = st.file_uploader(
             "Upload CSV file",
             type=["csv"],
-            help="CSV with columns: customer_id, campaign_id, ad_group_id, clicks, impressions, cost, conversions, conv_value"
+            help="CSV with columns: date, customer_id, campaign_id, ad_group_id, clicks, impressions, cost, conversions, conv_value"
         )
-        
+
         if uploaded_file:
-            st.info("File upload integration can be added to parse and send data to backend.")
-            df = pd.read_csv(uploaded_file)
-            st.dataframe(df.head(10), use_container_width=True)
+            # Preview the uploaded data
+            try:
+                # Try to read CSV normally first
+                uploaded_file.seek(0)
+                df = pd.read_csv(uploaded_file)
+                st.markdown(f"**Preview** ({len(df)} rows):")
+                st.dataframe(df.head(10), use_container_width=True)
+            except pd.errors.ParserError as e:
+                # Google Ads exports often have metadata rows - try skipping them
+                uploaded_file.seek(0)
+                try:
+                    # Try reading with different skip options
+                    df = pd.read_csv(uploaded_file, skiprows=range(1, 3))  # Skip rows 1-2 (common for GA exports)
+                    st.markdown(f"**Preview** ({len(df)} rows) - skipped header rows:")
+                    st.dataframe(df.head(10), use_container_width=True)
+                except:
+                    st.warning("⚠️ Cannot preview this file format, but you can still try to upload it.")
+                    st.info("The file may contain metadata rows. The backend will attempt to process it.")
+
+            # Upload button
+            if st.button("📤 Upload to Backend", key="upload_btn", use_container_width=True):
+                try:
+                    with st.spinner("Uploading data..."):
+                        # Reset file pointer to beginning
+                        uploaded_file.seek(0)
+
+                        # Send file to backend
+                        files = {"file": (uploaded_file.name, uploaded_file.getvalue(), "text/csv")}
+                        response = requests.post(
+                            f"{api_url}/ingest/upload",
+                            files=files,
+                            timeout=30
+                        )
+
+                        if response.status_code == 200:
+                            result = response.json()
+                            st.success(f"✅ {result['message']}")
+                            st.json(result)
+                        else:
+                            st.error(f"❌ Error: {response.status_code}")
+                            try:
+                                error_detail = response.json().get("detail", response.text)
+                                st.error(error_detail)
+                            except:
+                                st.error(response.text)
+
+                except requests.exceptions.ConnectionError:
+                    st.error(f"❌ Cannot connect to backend at {api_url}")
+                    st.info("Make sure your FastAPI server is running")
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
 
 # ===== TAB 2: ANOMALIES =====
 with tab2:
     st.header("Detected Anomalies")
-    
+
+    # Add mode selector
+    detection_mode = st.radio(
+        "Detection Mode",
+        ["Single Date", "Date Range (Last N Days)"],
+        horizontal=True
+    )
+
+    if detection_mode == "Date Range (Last N Days)":
+        days_back = st.slider(
+            "Number of days to analyze",
+            min_value=1,
+            max_value=30,
+            value=7,
+            help="Analyze the last N days for anomalies"
+        )
+
     col1, col2 = st.columns([3, 1])
-    
+
     with col2:
         if st.button("🔍 Detect Anomalies", key="detect_btn", use_container_width=True):
             st.session_state.detect_clicked = True
-    
+            st.session_state.detection_mode = detection_mode
+
     if st.session_state.get("detect_clicked"):
         try:
             with st.spinner("Detecting anomalies..."):
-                response = requests.get(
-                    f"{api_url}/anomalies",
-                    params={
-                        "date": selected_date.isoformat(),
-                        "min_z": min_z_score
-                    },
-                    timeout=30
-                )
-                
+                # Choose endpoint based on detection mode
+                if st.session_state.get("detection_mode") == "Date Range (Last N Days)":
+                    response = requests.get(
+                        f"{api_url}/anomalies/range",
+                        params={
+                            "end_date": selected_date.isoformat(),
+                            "days": days_back,
+                            "min_z": min_z_score
+                        },
+                        timeout=30
+                    )
+                else:
+                    response = requests.get(
+                        f"{api_url}/anomalies",
+                        params={
+                            "date": selected_date.isoformat(),
+                            "min_z": min_z_score
+                        },
+                        timeout=30
+                    )
+
                 if response.status_code == 200:
                     result = response.json()
                     anomalies = result.get("anomalies", [])
@@ -129,12 +206,13 @@ with tab2:
                         
                         # Convert to dataframe for better display
                         df_anomalies = pd.DataFrame(anomalies)
-                        
+
                         # Reorder and format columns for readability
                         display_cols = [
-                            "entity_type", "entity_id", "metric", "direction",
+                            "detection_date", "entity_type", "entity_id", "metric", "direction",
                             "observed", "expected", "zscore"
                         ]
+                        # Only include detection_date if it exists (range mode)
                         available_cols = [col for col in display_cols if col in df_anomalies.columns]
                         df_display = df_anomalies[available_cols].copy()
                         
